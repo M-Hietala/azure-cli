@@ -4,15 +4,29 @@
 # --------------------------------------------------------------------------------------------
 
 
-def get_cognitiveservices_management_client(cli_ctx, *_):
+_DEFAULT_API_VERSION = "2026-05-15-preview"
+_COST_CONTROL_API_VERSION = "2026-09-15-preview"
+
+
+def get_cognitiveservices_management_client(cli_ctx, *_, api_version=None):
     from azure.cli.core.commands.client_factory import get_mgmt_service_client
     from azure.mgmt.cognitiveservices import CognitiveServicesManagementClient
 
-    return get_mgmt_service_client(cli_ctx, CognitiveServicesManagementClient)
+    return get_mgmt_service_client(
+        cli_ctx,
+        CognitiveServicesManagementClient,
+        api_version=api_version or _DEFAULT_API_VERSION,
+    )
 
 
 def cf_accounts(cli_ctx, *_):
     return get_cognitiveservices_management_client(cli_ctx).accounts
+
+
+def cf_accounts_cost_control(cli_ctx, *_):
+    return get_cognitiveservices_management_client(
+        cli_ctx, api_version=_COST_CONTROL_API_VERSION
+    ).accounts
 
 
 def cf_deleted_accounts(cli_ctx, *_):
@@ -21,6 +35,12 @@ def cf_deleted_accounts(cli_ctx, *_):
 
 def cf_deployments(cli_ctx, *_):
     return get_cognitiveservices_management_client(cli_ctx).deployments
+
+
+def cf_deployments_cost_control(cli_ctx, *_):
+    return get_cognitiveservices_management_client(
+        cli_ctx, api_version=_COST_CONTROL_API_VERSION
+    ).deployments
 
 
 def cf_commitment_tiers(cli_ctx, *_):

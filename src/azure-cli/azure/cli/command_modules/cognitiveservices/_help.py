@@ -222,6 +222,10 @@ parameters:
 examples:
   - name: Update sku and tags.
     text: az cognitiveservices account update --name myresource -g cognitive-services-resource-group --sku S0 --tags external-app=chatbot-HR azure-web-app-bot=HR-external azure-app-service=HR-external-app-service
+  - name: Attach a Cost Control and configure telemetry and event connections.
+    text: az cognitiveservices account update --name myresource -g cognitive-services-resource-group --cost-control-ids /subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/myResourceGroup/providers/Microsoft.CognitiveServices/accounts/myresource/costControls/my-control --cost-control-connections '{"appInsightsConnectionId":"/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/myResourceGroup/providers/Microsoft.MachineLearningServices/workspaces/myworkspace/connections/application-insights","eventGridConnectionId":"/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/myResourceGroup/providers/Microsoft.MachineLearningServices/workspaces/myworkspace/connections/event-grid"}'
+  - name: Remove the Cost Control attachment and account-level connections.
+    text: az cognitiveservices account update --name myresource -g cognitive-services-resource-group --cost-control-ids --clear-cost-control-connections
 """
 
 helps[
@@ -336,6 +340,20 @@ long-summary: This article lists the Azure CLI commands for Azure Cognitive Serv
 examples:
   - name: Create a deployment for Azure Cognitive Services account.
     text: az cognitiveservices account deployment create -g yuanyang-test-sdk -n yytest-oai --deployment-name dpy --model-name ada --model-version "1" --model-format OpenAI --sku-capacity 1 --sku-name "Standard"
+  - name: Create a deployment with a Cost Control attachment.
+    text: az cognitiveservices account deployment create -g myResourceGroup -n myAccount --deployment-name myDeployment --model-name gpt-4.1 --model-version "2025-04-14" --model-format OpenAI --sku-name GlobalStandard --sku-capacity 10 --cost-control-ids /subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/myResourceGroup/providers/Microsoft.CognitiveServices/accounts/myAccount/costControls/my-control
+"""
+
+helps[
+    "cognitiveservices account deployment update"
+] = """
+type: command
+short-summary: Update the Cost Control attachment on a Cognitive Services account deployment.
+examples:
+  - name: Attach a Cost Control to an existing deployment.
+    text: az cognitiveservices account deployment update -g myResourceGroup -n myAccount --deployment-name myDeployment --cost-control-ids /subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/myResourceGroup/providers/Microsoft.CognitiveServices/accounts/myAccount/costControls/my-control
+  - name: Remove the Cost Control attachment from a deployment.
+    text: az cognitiveservices account deployment update -g myResourceGroup -n myAccount --deployment-name myDeployment --cost-control-ids
 """
 
 helps[

@@ -17,6 +17,7 @@ from azure.cli.core.decorators import retry
 from azure.cli.core.util import sdk_no_wait
 
 import azure.core.rest
+from azure.core.serialization import NULL
 
 from azure.mgmt.cognitiveservices.models import Account as CognitiveServicesAccount, Sku, \
     VirtualNetworkRule, IpRule, NetworkRuleSet, NetworkRuleAction, \
@@ -32,8 +33,13 @@ from azure.mgmt.cognitiveservices.models import Account as CognitiveServicesAcco
     OutboundRuleBasicResource, FqdnOutboundRule, \
     PrivateEndpointOutboundRule, PrivateEndpointOutboundRuleDestination, \
     ServiceTagOutboundRule, ServiceTagOutboundRuleDestination, \
-    Compute, ClusterComputeProperties, Pool
-from azure.cli.command_modules.cognitiveservices._client_factory import cf_accounts, cf_resource_skus
+    Compute, ClusterComputeProperties, Pool, CostControlConnections
+from azure.cli.command_modules.cognitiveservices._client_factory import (
+    cf_accounts,
+    cf_accounts_cost_control,
+    cf_deployments_cost_control,
+    cf_resource_skus,
+)
 from azure.cli.core.azclierror import (
     BadRequestError,
     MutuallyExclusiveArgumentError,
@@ -50,6 +56,9 @@ from azure.cli.command_modules.cognitiveservices._utils import load_connection_f
     _load_source_as_dict
 
 logger = get_logger(__name__)
+
+_MAX_ACCOUNT_COST_CONTROL_IDS = 1
+_MAX_DEPLOYMENT_COST_CONTROL_IDS = 1
 
 # ACR Pack task YAML template for buildpack-based image builds
 # Used when no Dockerfile exists - automatically detects Python, Node.js, .NET, etc.
@@ -199,6 +208,7 @@ def create(
 
 
 def update(
+    cmd,
     client,
     resource_group_name,
     account_name,
@@ -210,10 +220,29 @@ def update(
     encryption=None,
     allow_project_management=None,
     kind=None,
+    cost_control_ids=None,
+    cost_control_connections=None,
+    clear_cost_control_connections=False,
 ):
     """
     Update an Azure Cognitive Services account.
     """
+    if cost_control_connections is not None and clear_cost_control_connections:
+        raise MutuallyExclusiveArgumentError(
+            "--cost-control-connections and --clear-cost-control-connections cannot be used together."
+        )
+    if cost_control_ids is not None and len(cost_control_ids) > _MAX_ACCOUNT_COST_CONTROL_IDS:
+        raise InvalidArgumentValueError(
+            "--cost-control-ids accepts at most one resource ID."
+        )
+
+    if any((
+        cost_control_ids is not None,
+        cost_control_connections is not None,
+        clear_cost_control_connections,
+    )):
+        client = cf_accounts_cost_control(cmd.cli_ctx)
+
     sa = None
     if sku_name is None:
         sa = client.get(resource_group_name, account_name)
@@ -235,6 +264,23 @@ def update(
         properties.user_owned_storage = json.loads(storage)
     if encryption is not None:
         properties.encryption = json.loads(encryption)
+    if cost_control_ids is not None:
+        properties.cost_control_ids = cost_control_ids
+    if cost_control_connections is not None:
+        connection_values = {}
+        if "appInsightsConnectionId" in cost_control_connections:
+            connection_values["app_insights_connection_id"] = (
+                NULL if cost_control_connections["appInsightsConnectionId"] is None
+                else cost_control_connections["appInsightsConnectionId"]
+            )
+        if "eventGridConnectionId" in cost_control_connections:
+            connection_values["event_grid_connection_id"] = (
+                NULL if cost_control_connections["eventGridConnectionId"] is None
+                else cost_control_connections["eventGridConnectionId"]
+            )
+        properties.cost_control_connections = CostControlConnections(**connection_values)
+    elif clear_cost_control_connections:
+        properties.cost_control_connections = NULL
 
     if kind is not None:
         if sa is None:
@@ -368,14 +414,18 @@ def identity_show(client, resource_group_name, account_name):
 
 
 def deployment_begin_create_or_update(
-        client, resource_group_name, account_name, deployment_name,
+        cmd, client, resource_group_name, account_name, deployment_name,
         model_format, model_name, model_version, model_source=None,
         sku_name=None, sku_capacity=None,
         scale_settings_scale_type=None, scale_settings_capacity=None,
-        spillover_deployment_name=None):
+        spillover_deployment_name=None, cost_control_ids=None):
     """
     Create a deployment for Azure Cognitive Services account.
     """
+    _validate_deployment_cost_control_ids(cost_control_ids)
+    if cost_control_ids is not None:
+        client = cf_deployments_cost_control(cmd.cli_ctx)
+
     dpy = Deployment()
     dpy.properties = DeploymentProperties()
     dpy.properties.model = DeploymentModel()
@@ -393,7 +443,33 @@ def deployment_begin_create_or_update(
         dpy.properties.scale_settings.capacity = scale_settings_capacity
     if spillover_deployment_name is not None:
         dpy.properties.spillover_deployment_name = spillover_deployment_name
+    if cost_control_ids is not None:
+        dpy.properties.cost_control_ids = cost_control_ids
     return client.begin_create_or_update(resource_group_name, account_name, deployment_name, dpy, polling=False)
+
+
+def _validate_deployment_cost_control_ids(cost_control_ids):
+    if cost_control_ids is not None and len(cost_control_ids) > _MAX_DEPLOYMENT_COST_CONTROL_IDS:
+        raise InvalidArgumentValueError(
+            "--cost-control-ids accepts at most one resource ID for a deployment."
+        )
+
+
+def deployment_update(client, resource_group_name, account_name, deployment_name, cost_control_ids=None):
+    """Update the Cost Control attachment on an existing deployment."""
+    if cost_control_ids is None:
+        raise RequiredArgumentMissingError(
+            "Specify --cost-control-ids to update the deployment."
+        )
+    _validate_deployment_cost_control_ids(cost_control_ids)
+
+    deployment = client.get(resource_group_name, account_name, deployment_name)
+    if deployment.properties is None:
+        deployment.properties = DeploymentProperties()
+    deployment.properties.cost_control_ids = cost_control_ids
+    return client.begin_create_or_update(
+        resource_group_name, account_name, deployment_name, deployment, polling=False
+    )
 
 
 def managed_compute_deployment_create(

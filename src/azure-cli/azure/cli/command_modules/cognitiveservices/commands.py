@@ -8,7 +8,7 @@ from azure.cli.command_modules.cognitiveservices._client_factory import cf_accou
     cf_deleted_accounts, cf_deployments, cf_commitment_plans, cf_commitment_tiers, cf_models, cf_usages, \
     cf_ai_projects, cf_account_connections, cf_projects, cf_project_connections, \
     cf_managed_network_settings, cf_managed_network_provisions, cf_outbound_rule, \
-    cf_managed_compute_deployments, cf_computes
+    cf_managed_compute_deployments, cf_computes, cf_deployments_cost_control
 
 
 def load_command_table(self, _):
@@ -100,6 +100,7 @@ def load_command_table(self, _):
             'cognitiveservices account deployment', deployments_type,
             client_factory=cf_deployments) as g:
         g.custom_command('create', 'deployment_begin_create_or_update')
+        g.custom_command('update', 'deployment_update', client_factory=cf_deployments_cost_control, is_preview=True)
         g.command('delete', 'begin_delete')
         g.show_command('show', 'get')
         g.command('list', 'list')

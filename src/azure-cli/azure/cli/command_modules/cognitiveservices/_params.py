@@ -16,6 +16,7 @@ from azure.cli.core.commands.parameters import (
     get_location_type,
 )
 from azure.cli.core.util import shell_safe_json_parse, CLIError
+from azure.cli.core.azclierror import InvalidArgumentValueError
 
 from azure.cli.core.commands.validators import validate_tag
 from azure.cli.core.decorators import Completer
@@ -30,6 +31,58 @@ from azure.mgmt.cognitiveservices.models import (
 
 logger = get_logger(__name__)
 name_arg_type = CLIArgumentType(options_list=["--name", "-n"], metavar="NAME")
+
+_COST_CONTROL_CONNECTION_PROPERTIES = {
+    "appInsightsConnectionId",
+    "eventGridConnectionId",
+}
+
+
+def _parse_cost_control_id(value):
+    from azure.mgmt.core.tools import is_valid_resource_id, parse_resource_id
+
+    if not isinstance(value, str) or not is_valid_resource_id(value):
+        raise InvalidArgumentValueError(
+            "Expected a fully qualified Cost Control resource ID: '{}'.".format(value)
+        )
+
+    parsed_id = parse_resource_id(value)
+    if not all((
+        parsed_id.get("namespace", "").lower() == "microsoft.cognitiveservices",
+        parsed_id.get("type", "").lower() == "accounts",
+        parsed_id.get("child_type_1", "").lower() == "costcontrols",
+        parsed_id.get("child_name_1"),
+        parsed_id.get("last_child_num") == 1,
+    )):
+        raise InvalidArgumentValueError(
+            "Expected a Microsoft.CognitiveServices/accounts/costControls resource ID: '{}'.".format(value)
+        )
+    return value
+
+
+def _parse_cost_control_connections(value):
+    from azure.mgmt.core.tools import is_valid_resource_id
+
+    connections = shell_safe_json_parse(value)
+    if not isinstance(connections, dict):
+        raise InvalidArgumentValueError(
+            "--cost-control-connections must be a JSON object."
+        )
+
+    unsupported = set(connections) - _COST_CONTROL_CONNECTION_PROPERTIES
+    if unsupported:
+        raise InvalidArgumentValueError(
+            "Unsupported Cost Control connection properties: {}.".format(
+                ", ".join(sorted(unsupported))
+            )
+        )
+
+    for resource_id in connections.values():
+        if resource_id is not None and not is_valid_resource_id(resource_id):
+            raise InvalidArgumentValueError(
+                "Expected a fully qualified Azure resource ID: '{}'.".format(resource_id)
+            )
+    return connections
 
 
 def _environment_variables_type(value: str) -> dict:
@@ -283,6 +336,38 @@ def load_arguments(self, _):
             help="The target API name to transform the existing account into.",
         )
 
+    with self.argument_context(
+        "cognitiveservices account update", arg_group="Cost Control"
+    ) as c:
+        c.argument(
+            "cost_control_ids",
+            options_list=["--cost-control-ids"],
+            nargs="*",
+            type=_parse_cost_control_id,
+            is_preview=True,
+            help=(
+                "Resource ID of the Cost Control attached to the account. "
+                "Specify the option without a value to remove the attachment."
+            ),
+        )
+        c.argument(
+            "cost_control_connections",
+            options_list=["--cost-control-connections"],
+            type=_parse_cost_control_connections,
+            is_preview=True,
+            help=(
+                "JSON object containing appInsightsConnectionId and/or eventGridConnectionId. "
+                "Set either property to null to clear that connection."
+            ),
+        )
+        c.argument(
+            "clear_cost_control_connections",
+            options_list=["--clear-cost-control-connections"],
+            action="store_true",
+            is_preview=True,
+            help="Remove the account-level Cost Control connections.",
+        )
+
     with self.argument_context("cognitiveservices account network-rule") as c:
         c.argument("ip_address", help="IPv4 address or CIDR range.")
         c.argument(
@@ -325,6 +410,41 @@ def load_arguments(self, _):
             "scale_settings_capacity",
             options_list=["--scale-capacity", "--scale-settings-capacity"],
             help="Cognitive Services account deployment scale settings capacity.",
+        )
+
+    with self.argument_context(
+        "cognitiveservices account deployment create", arg_group="Cost Control"
+    ) as c:
+        c.argument(
+            "cost_control_ids",
+            options_list=["--cost-control-ids"],
+            nargs="*",
+            type=_parse_cost_control_id,
+            is_preview=True,
+            help="Resource ID of the Cost Control attached to the deployment.",
+        )
+
+    with self.argument_context("cognitiveservices account deployment update") as c:
+        c.argument(
+            "deployment_name",
+            required=True,
+            help="Cognitive Services account deployment name.",
+        )
+
+    with self.argument_context(
+        "cognitiveservices account deployment update", arg_group="Cost Control"
+    ) as c:
+        c.argument(
+            "cost_control_ids",
+            options_list=["--cost-control-ids"],
+            nargs="*",
+            type=_parse_cost_control_id,
+            is_preview=True,
+            required=True,
+            help=(
+                "Resource ID of the Cost Control attached to the deployment. "
+                "Specify the option without a value to remove the attachment."
+            ),
         )
 
     with self.argument_context("cognitiveservices account commitment-plan") as c:
